@@ -1,0 +1,7 @@
+{
+  "siteName": "RTE Academy",
+  "timezone": "Asia/Saigon",
+  "enableEmailNotifications": true,
+  "attendanceRequirePhoto": false,
+  "theme": "light"
+}
