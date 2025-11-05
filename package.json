@@ -49,6 +49,6 @@
     "@types/stream-buffers": "^3.0.7",
     "@types/uuid": "^11.0.0",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.3"
   }
 }
