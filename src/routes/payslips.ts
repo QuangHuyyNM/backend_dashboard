@@ -35,7 +35,22 @@ async function columnExists(tableName: string, columnName: string) {
 }
 
 // Utility: normalize a payslip raw db row into JS object with numbers
-function normalizePayslipRow(r: any) {
+function normalizePayslipRow(r: any): {
+  id: string | null;
+  employee_id: string | null;
+  employee_name: string;
+  employee_role: string;
+  month: number;
+  year: number;
+  teaching_sessions: number;
+  teaching_hours: number;
+  hourly_rate: number;
+  total_pay: number;
+  paid_amount: number;
+  status: string;
+  created_at: any;
+  updated_at: any;
+} | null {
   if (!r) return null;
   const id = r.id || r.payslip_id || r.payslipId || null;
   return {
@@ -86,11 +101,11 @@ async function ensureTablesExist() {
       paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX (payslip_id)
     )`);
-  } catch (err) {
+  } catch (err: any) {
     console.warn("[payslips] ensureTablesExist warning:", err?.message || err);
   }
 }
-ensureTablesExist().catch((e) => {
+ensureTablesExist().catch((e: any) => {
   console.warn(
     "[payslips] ensureTablesExist failed (non-fatal):",
     e?.message || e
@@ -100,9 +115,7 @@ ensureTablesExist().catch((e) => {
 // Email transporter helper (optional)
 function getEmailTransporter() {
   const host = process.env.SMTP_HOST;
-  const port = process.env.SMTP_PORT
-    ? Number(process.env.SMTP_PORT)
-    : undefined;
+  const port = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
   if (!host || !port) return null;
@@ -125,9 +138,7 @@ async function sendPaymentReceiptEmail(
       console.info("[payslips] SMTP not configured — skipping email");
       return;
     }
-    const subject = `Biên nhận thanh toán — ${payslip.employee_name || ""} (${
-      payslip.month
-    }/${payslip.year})`;
+    const subject = `Biên nhận thanh toán — ${payslip.employee_name || ""} (${payslip.month}/${payslip.year})`;
     const html = `
       <p>Xin chào ${payslip.employee_name || ""},</p>
       <p>Chúng tôi đã ghi nhận thanh toán:</p>
@@ -147,7 +158,7 @@ async function sendPaymentReceiptEmail(
       subject,
       html,
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error(
       "[payslips] sendPaymentReceiptEmail failed (non-fatal):",
       e?.message || e
@@ -262,8 +273,11 @@ router.post(
 
       if (existingCount > 0 && force) {
         // delete existing payslips and related payments (best-effort)
+        // use JOIN deletion to avoid issues with subqueries in some MySQL modes
         await conn.query(
-          `DELETE FROM payslip_payments WHERE payslip_id IN (SELECT id FROM payslips WHERE month=? AND year=?)`,
+          `DELETE p FROM payslip_payments p
+           INNER JOIN payslips s ON p.payslip_id = s.id
+           WHERE s.month = ? AND s.year = ?`,
           [month, year]
         );
         await conn.query(`DELETE FROM payslips WHERE month=? AND year=?`, [
@@ -317,14 +331,14 @@ router.post(
         created,
         message: `Payslips created for ${month}/${year}`,
       });
-    } catch (err) {
-      console.error("POST /api/payslips/run error", err);
+    } catch (err: any) {
+      console.error("POST /api/payslips/run error", err?.message || err);
       try {
         await conn.rollback();
-      } catch (e) {}
+      } catch (e: any) {}
       try {
         conn.release();
-      } catch (e) {}
+      } catch (e: any) {}
       res.status(500).json({
         message: "Lỗi khi chạy payroll",
         error: err?.message || String(err),
@@ -370,8 +384,8 @@ router.get("/", requireAuth, async (req, res) => {
 
     const normalized = (rows || []).map(normalizePayslipRow);
     res.json({ rows: normalized, total, page, limit });
-  } catch (err) {
-    console.error("GET /api/payslips error", err);
+  } catch (err: any) {
+    console.error("GET /api/payslips error", err?.message || err);
     res.status(500).json({
       message: "Lỗi khi lấy payslips",
       error: err?.message || String(err),
@@ -391,10 +405,9 @@ router.get("/:id", requireAuth, async (req, res) => {
       [id]
     );
     const raw = (rows && rows[0]) || null;
-    if (!raw)
-      return res.status(404).json({ message: "Payslip không tìm thấy" });
+    if (!raw) return res.status(404).json({ message: "Payslip không tìm thấy" });
 
-    const payslip = normalizePayslipRow(raw);
+    const payslip = normalizePayslipRow(raw)!; // safe because raw exists
 
     // payments - choose order column depending on schema
     const payOrder = (await columnExists("payslip_payments", "created_at"))
@@ -415,8 +428,8 @@ router.get("/:id", requireAuth, async (req, res) => {
     }));
 
     res.json({ payslip, payments: normalizedPayments });
-  } catch (err) {
-    console.error("GET /api/payslips/:id error", err);
+  } catch (err: any) {
+    console.error("GET /api/payslips/:id error", err?.message || err);
     res
       .status(500)
       .json({ message: "Lỗi server", error: err?.message || String(err) });
@@ -452,7 +465,7 @@ router.post(
         conn.release();
         return res.status(404).json({ message: "Payslip không tìm thấy" });
       }
-      const payslip = normalizePayslipRow(raw);
+      const payslip = normalizePayslipRow(raw)!; // safe because raw exists
 
       // --- determine whether payslip_payments.id is AUTO_INCREMENT ---
       const [idColRows]: any = await conn.query(
@@ -469,13 +482,10 @@ router.post(
         idColRows[0].EXTRA.toLowerCase().includes("auto_increment");
 
       // ensure payslip_payments table exists? (defensive)
-      // If table doesn't exist, ensureTablesExist() should have created it during startup,
-      // but handle gracefully:
       const [tbl]: any = await conn.query(
         `SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'payslip_payments'`
       );
       if (!(tbl && tbl[0] && Number(tbl[0].cnt) > 0)) {
-        // create minimal table if missing (best-effort)
         await conn.query(
           `CREATE TABLE IF NOT EXISTS payslip_payments (
              id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -549,7 +559,7 @@ router.post(
         [payslip.id]
       );
       const updatedPayslipRaw = (uRows && uRows[0]) || null;
-      const updatedPayslip = normalizePayslipRow(updatedPayslipRaw);
+      const updatedPayslip = normalizePayslipRow(updatedPayslipRaw) || null;
 
       // choose payment ordering column depending on schema
       const payOrder = (await columnExists("payslip_payments", "created_at"))
@@ -582,14 +592,10 @@ router.post(
                 }
               : null;
           if (lastPayment) {
-            await sendPaymentReceiptEmail(
-              empEmail,
-              updatedPayslip,
-              lastPayment
-            );
+            await sendPaymentReceiptEmail(empEmail, updatedPayslip, lastPayment);
           }
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("[payslips] send receipt non-fatal:", e?.message || e);
       }
 
@@ -605,14 +611,14 @@ router.post(
           created_at: pp.created_at || pp.paid_at || null,
         })),
       });
-    } catch (err) {
-      console.error("POST /api/payslips/:id/pay error", err);
+    } catch (err: any) {
+      console.error("POST /api/payslips/:id/pay error", err?.message || err);
       try {
         await conn.rollback();
-      } catch (e) {}
+      } catch (e: any) {}
       try {
         conn.release();
-      } catch (e) {}
+      } catch (e: any) {}
       res.status(500).json({
         message: "Lỗi khi lưu payment",
         error: err?.message || String(err),
@@ -646,7 +652,12 @@ router.post(
         conn.release();
         return res.status(404).json({ message: "Payslip không tìm thấy" });
       }
-      const payslip = normalizePayslipRow(raw);
+      const payslip = normalizePayslipRow(raw)!;
+      if (!payslip.employee_id) {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({ message: "Payslip không có employee_id" });
+      }
       const { sessions, hours } = await computeAttendanceMetrics(
         payslip.employee_id,
         payslip.month,
@@ -671,14 +682,14 @@ router.post(
       conn.release();
 
       res.json({ success: true, payslip: updated });
-    } catch (err) {
-      console.error("POST /api/payslips/:id/recalculate error", err);
+    } catch (err: any) {
+      console.error("POST /api/payslips/:id/recalculate error", err?.message || err);
       try {
         await conn.rollback();
-      } catch (e) {}
+      } catch (e: any) {}
       try {
         conn.release();
-      } catch (e) {}
+      } catch (e: any) {}
       res.status(500).json({
         message: "Lỗi khi tính lại payslip",
         error: err?.message || String(err),
@@ -702,7 +713,7 @@ router.get("/:id/pdf", requireAuth, async (req, res) => {
     if (!raw)
       return res.status(404).json({ message: "Payslip không tìm thấy" });
 
-    const payslip = normalizePayslipRow(raw);
+    const payslip = normalizePayslipRow(raw)!;
 
     const [payslipPayments]: any = await pool.query(
       `SELECT * FROM payslip_payments WHERE payslip_id = ? ORDER BY paid_at DESC`,
@@ -753,8 +764,8 @@ router.get("/:id/pdf", requireAuth, async (req, res) => {
       );
       res.send(buf);
     });
-  } catch (err) {
-    console.error("GET /api/payslips/:id/pdf error", err);
+  } catch (err: any) {
+    console.error("GET /api/payslips/:id/pdf error", err?.message || err);
     res
       .status(500)
       .json({ message: "Lỗi khi tạo PDF", error: err?.message || String(err) });
@@ -797,14 +808,14 @@ router.delete(
         return res.status(404).json({ message: "Payslip không tìm thấy" });
       }
       res.json({ success: true });
-    } catch (err) {
-      console.error("DELETE /api/payslips/:id error", err);
+    } catch (err: any) {
+      console.error("DELETE /api/payslips/:id error", err?.message || err);
       try {
         await conn.rollback();
-      } catch (e) {}
+      } catch (e: any) {}
       try {
         conn.release();
-      } catch (e) {}
+      } catch (e: any) {}
       res.status(500).json({
         message: "Lỗi khi xóa payslip",
         error: err?.message || String(err),

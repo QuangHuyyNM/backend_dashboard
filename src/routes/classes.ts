@@ -1,6 +1,7 @@
 // src/routes/classes.ts
 import { Router } from "express";
 import pool from "../db"; // mong là bạn export mysql2/promise pool ở đây
+import { toErrorMessage } from "../utils/errorHelpers"; 
 
 const router = Router();
 
@@ -8,7 +9,7 @@ const router = Router();
  * Helper: generate candidate class_code and ensure uniqueness.
  * Strategy: use courseId prefix + timestamp slice + random digits.
  */
-const generateUniqueClassCode = async (courseId) => {
+async function generateUniqueClassCode(courseId?: string | number | null): Promise<string> {
   const prefix = (courseId || "CL")
     .toString()
     .replace(/\s+/g, "")
@@ -19,7 +20,7 @@ const generateUniqueClassCode = async (courseId) => {
       .toString()
       .slice(-4)}-${Math.floor(Math.random() * 900 + 100)}`;
     // check exists
-    const [rows] = await pool.query(
+    const [rows] = await pool.query<any[]>(
       "SELECT 1 FROM classes WHERE class_code = ? LIMIT 1",
       [candidate]
     );
@@ -28,7 +29,7 @@ const generateUniqueClassCode = async (courseId) => {
   }
   // fallback: use UUID-like
   return `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-};
+}
 
 /**
  * GET /api/classes
@@ -114,11 +115,11 @@ router.get("/:id", async (req, res) => {
       WHERE c.class_code = ?
       LIMIT 1
     `;
-    const [rows] = await pool.query(sql, [id]);
+    const [rows] = await pool.query<any[]>(sql, [id]);
     const arr = rows || [];
-    if (arr.length === 0)
+    if ((arr as any[]).length === 0)
       return res.status(404).json({ message: "Class not found" });
-    res.json(arr[0]);
+    res.json((arr as any[])[0]);
   } catch (err) {
     console.error("GET /api/classes/:id error:", err);
     res.status(500).json({ message: "DB error while fetching class" });
@@ -164,7 +165,7 @@ router.post("/", async (req, res) => {
     let codeToUse = (classCode && String(classCode).trim()) || null;
     if (codeToUse) {
       // ensure not exists
-      const [exists] = await pool.query(
+      const [exists] = await pool.query<any[]>(
         "SELECT 1 FROM classes WHERE class_code = ? LIMIT 1",
         [codeToUse]
       );
@@ -216,8 +217,8 @@ router.post("/", async (req, res) => {
       [codeToUse]
     );
 
-    res.status(201).json((createdRows || [])[0]);
-  } catch (err) {
+    res.status(201).json(((createdRows as any[]) || [])[0]);
+  } catch (err: any) {
     console.error("POST /api/classes error:", err);
     if (err?.code === "ER_DUP_ENTRY") {
       return res.status(409).json({ message: "Duplicate entry" });
@@ -271,11 +272,11 @@ router.put("/:id", async (req, res) => {
 
   try {
     // check exists
-    const [exists] = await pool.query(
+    const [exists] = await pool.query<any[]>(
       "SELECT 1 FROM classes WHERE class_code = ? LIMIT 1",
       [id]
     );
-    if ((exists || []).length === 0) {
+    if ((exists as any[]).length === 0) {
       return res.status(404).json({ message: "Class not found" });
     }
 
@@ -297,7 +298,7 @@ router.put("/:id", async (req, res) => {
       [id]
     );
 
-    res.json((rows || [])[0]);
+    res.json(((rows as any[]) || [])[0]);
   } catch (err) {
     console.error("PUT /api/classes/:id error:", err);
     res.status(500).json({ message: "DB error while updating class" });
@@ -311,7 +312,7 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    const [exists] = await pool.query(
+    const [exists] = await pool.query<any[]>(
       "SELECT 1 FROM classes WHERE class_code = ? LIMIT 1",
       [id]
     );

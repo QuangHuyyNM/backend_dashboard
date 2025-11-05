@@ -694,7 +694,9 @@ router.post(
         // Not fatal — we'll fallback to notifications below if insert also fails.
         console.warn(
           "[invoices.remind] CREATE TABLE invoice_reminder_logs failed, will fallback to notifications. Error:",
-          createErr?.message || createErr
+          typeof createErr === "object" && createErr !== null && "message" in createErr
+            ? (createErr as any).message
+            : String(createErr)
         );
       }
 
@@ -717,7 +719,9 @@ router.post(
         // Insert failed (maybe table not creatable / permissions), fallback to notifications
         console.warn(
           "[invoices.remind] insert into invoice_reminder_logs failed, fallback to notifications. Error:",
-          insertErr?.message || insertErr
+          typeof insertErr === "object" && insertErr !== null && "message" in insertErr
+            ? (insertErr as any).message
+            : String(insertErr)
         );
       }
 
@@ -757,7 +761,7 @@ router.post(
           .status(500)
           .json({
             message: "Lỗi khi tạo reminder",
-            error: String(notifErr?.message || notifErr),
+            error: typeof notifErr === 'object' && notifErr !== null && 'message' in notifErr ? (notifErr as any).message : String(notifErr),
           });
       }
     } catch (err: any) {

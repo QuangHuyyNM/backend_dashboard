@@ -57,7 +57,7 @@ router.get("/", requireAuth, async (req, res) => {
 
     const normalized = (rows || []).map(normalizeExpenseRow);
     res.json({ rows: normalized, total, page, limit });
-  } catch (err) {
+  } catch (err: any) {
     console.error("GET /api/finance/expenses error", err);
     res.status(500).json({
       message: "Lỗi khi lấy chi phí",
@@ -106,7 +106,7 @@ router.post(
         created_by,
       };
       res.json({ success: true, expense: inserted });
-    } catch (err) {
+    } catch (err: any) {
       console.error("POST /api/finance/expenses error", err);
       res.status(500).json({
         message: "Lỗi khi thêm chi phí",
@@ -167,7 +167,7 @@ router.put(
       const updated = normalizeExpenseRow(updatedRows[0]);
 
       res.json({ success: true, expense: updated });
-    } catch (err) {
+    } catch (err: any) {
       console.error("PUT /api/finance/expenses/:id error", err);
       res.status(500).json({
         message: "Lỗi khi cập nhật chi phí",
@@ -197,7 +197,7 @@ router.delete(
       }
 
       res.json({ success: true });
-    } catch (err) {
+    } catch (err: any) {
       console.error("DELETE /api/finance/expenses/:id error", err);
       res.status(500).json({
         message: "Lỗi khi xóa chi phí",

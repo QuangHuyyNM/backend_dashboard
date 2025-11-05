@@ -1,4 +1,3 @@
-// src/middlewares/auth.ts
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import dotenv from "dotenv";
@@ -28,9 +27,18 @@ export interface AuthPayload extends JwtPayload {
   permissions?: string[];
 }
 
+/**
+ * AuthenticatedRequest - attach user payload after JWT verify
+ */
 export interface AuthenticatedRequest extends Request {
   user?: AuthPayload;
 }
+
+/**
+ * For compatibility with older imports that used `AuthedRequest`,
+ * export a type alias so both names work.
+ */
+export type AuthedRequest = AuthenticatedRequest;
 
 /**
  * Try to parse dev user from header or env:
@@ -39,7 +47,6 @@ export interface AuthenticatedRequest extends Request {
  */
 function tryParseDevUser(header?: string): AuthPayload | null {
   if (!header) {
-    // console.debug('[auth] tryParseDevUser: no header');
     return null;
   }
   try {
